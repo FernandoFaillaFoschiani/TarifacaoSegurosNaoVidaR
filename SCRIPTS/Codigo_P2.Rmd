@@ -1,0 +1,1037 @@
+---
+title: "Matemática Atuarial Não Vida-P2"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+#### Bibliotecas Utilizadas
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(tidyr)
+library(plyr)
+library(fitdistrplus)
+library(knitr)
+```
+
+# Relatório Mês 1
+
+## Introdução
+
+Após a realização da P1, o resultado final obtido foi uma tabela de preços com valores específicos para cada perfil de segurado; agora na P2, serão enviado novos contratos para subscrição e deverá ser realizado o acompanhamento de cada nova safra.
+
+## Mês 1
+
+Nesse primeiro mês foram subscritos todos os 4000 contratos recebidos, e para indicar o valor exato de cada um dos contratos foi realizado um join com a tabela resultado da P1.
+
+```{r warning=FALSE}
+ContratosMes1 <- read.csv('Mes1_P1.csv', encoding = 'UTF-8', sep = ';')
+PrecosPremios <- read.csv('TabelaPremios.csv', encoding ='UTF-8', colClasses = c('SexProf'='character') )
+
+
+colnames(ContratosMes1)[1] <- 'Id'
+ContratosMes1$SexProf <- paste(ContratosMes1$SexBio, ContratosMes1$Profis,sep ='')
+
+ContratosMes1 <- ContratosMes1 %>%
+  dplyr::select(Id, SexProf)%>%
+  left_join(PrecosPremios, by = 'SexProf')%>%
+  dplyr::select(Id,SexProf,PremioA,PremioB,PremioContrato) %>%
+  mutate(Safra = 'Mes1', ValorParcela = round((PremioContrato/4), digits = 2), TempContrato = 1) %>%
+  mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2))
+
+head(ContratosMes1)
+```
+
+## Arrecadado
+
+Como resultado da subscrição desses contratos, obteve-se um montante de R\$ 142.706,9 de prêmio a receber, contra RS 35.676, já recebidos.
+
+Segue abaixo, gráficos sintetizandos esses valores por grupo.
+
+```{r fig.width =8,fig.height=5, warning=FALSE}
+Recebimentos <- ContratosMes1 %>%
+                  group_by(SexProf) %>%
+                  dplyr::summarise(Recebido = sum(ValorRecebido), Cont=n())
+
+
+
+
+plot1 <- ggplot(Recebimentos,aes(x = reorder(SexProf, -Recebido), y = Recebido )) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste('R$',Recebido)), vjust = -1, ) +
+            ylim(0,23000)+
+            ggtitle('Arrecadação Por Perfil M1') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))+
+            geom_label(
+              label = paste('Total Arrecadado:R$',sum(Recebimentos$Recebido),sep=''),
+              x = '13',
+              y = 20000,
+              label.size = 0,
+              size = 6
+            )
+            
+
+
+plot2 <-ggplot(Recebimentos,aes(x = reorder(SexProf, -Cont), y = Cont)) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste(Cont)), vjust = -1, ) +
+            ylim(0,1800)+
+            ggtitle('Quantidade de Contratos Por Perfil M1') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07)) +
+            geom_label(
+              label = paste('Total Contratos:',sum(Recebimentos$Cont)),
+              x = '13',
+              y = 1300,
+              label.size = 0,
+              size = 6
+            )
+
+grid.arrange(plot1,plot2)
+```
+
+# Relatório Mês 2
+
+Nesse segundo mês, inicialmente será arrecadado a 2° parcela dos contratos do mês anterior; após isso será descontado o valor de cada sinistro ocorrido.
+
+Com essa primeira etapa feita, novos contratos serão oferecidos para subscrição.
+
+## Atualização dos Contratos Mês 1
+
+Os seguintes passos atualizam os valores arrecadados e a ocorrência de sinistros dos contratos do primeiro mês.
+
+```{r pressure, echo=FALSE, warning=FALSE}
+SinistrosMes1 <- read.csv2('SinistroMes1.csv')
+
+colnames(SinistrosMes1)[1] <- 'Id'
+SinistrosMes1 <- SinistrosMes1[,-(2:3)]
+
+ContratosMes1 <- ContratosMes1 %>%
+                  left_join(SinistrosMes1, by = 'Id')
+
+ContratosMes1$TempContrato <- 2
+ContratosMes1$ValorRecebido <- ContratosMes1$ValorParcela * ContratosMes1$TempContrato
+
+```
+
+### Prêmio x Sinistralidade
+
+```{r warning=FALSE}
+TabGraf <- ContratosGeral %>%
+            dplyr::select(ValorRendido, IndenizaA, IndenizaB) %>%
+            summarise(ValorRendido = round(sum(ValorRendido),digits = 2), IndenizaA = sum(IndenizaA), IndenizaB = sum(IndenizaB))
+
+
+TabGraf$ValorRecebido - TabGraf$IndenizaA - TabGraf$IndenizaB
+
+TabGraf <- TabGraf %>%
+            pivot_longer(cols = c(ValorRecebido, IndenizaA, IndenizaB),
+                         names_to = 'Sum')
+
+
+
+ggplot(TabGraf,aes(x = reorder(Sum, -value), y = value )) +
+  geom_bar(stat = 'identity', fill =c(rgb(0.3,0.5,0.4,0.6) ,
+                                      rgb(0.3,0.9,0.4,0.6) ,
+                                      rgb(0.3,0.1,0.4,0.6)), colour = 'Black') +
+  geom_text(aes(label = paste('R$',value)), vjust = -1, ) +
+  ylim(0,75000)+
+  ggtitle('Recebido X Sinistralidade') +
+  xlab('')+
+  theme_classic() +
+  theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))
+
+```
+
+### Por Perfil
+
+```{r fig.width= 11,fig.height=6, warning=FALSE}
+TabGraf2 <- ContratosMes1 %>% 
+              dplyr::select(Id,SexProf,ValorRecebido,IndenizaA, IndenizaB) %>%
+              pivot_longer(cols = c(ValorRecebido,IndenizaA,IndenizaB),
+                           names_to = 'Categoria',
+                           values_to = 'Valor') %>%
+              group_by(SexProf, Categoria) %>%
+              dplyr::summarise(Valor = sum(Valor))
+
+
+
+ggplot(TabGraf2, aes(fill=reorder(Categoria, -Valor),y = Valor, x =SexProf))+
+  geom_bar(position = 'dodge', stat= 'identity' ) +
+  scale_fill_manual(values = c(rgb(0.3,0.5,0.4,0.6) ,
+                               rgb(0.3,0.1,0.4,0.6) ,
+                               rgb(0.3,0.9,0.4,0.6)) ) +
+  geom_text(label = paste('R$',TabGraf2$Valor), position = position_dodge(width = .9), vjust = -.7, size = 3) +
+  ylim(0,40000) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = 'bold', hjust = -.07),
+        legend.position = c(0.9, 0.6)) +
+  guides(fill=guide_legend(title="")) +
+  ggtitle('Indenização X Recebimento')
+
+```
+
+## Reajuste Do Valor de Contratos para Perda Coletiva
+
+Tendo em vista a áltissima arrecadação em relação a perda originida pelas indenizações, buscando simular um cenário real, o prêmio cobrado pelos contratos não é economicamente competitivo, para isso será calculado o risco de perda coletivo do grupo de contratos, para tentar adequar o valor dos prêmios.
+
+\$\$ F(s)=P(S≤s)=sum\limits{n=0}\^{\mbox{}\infty}
+
+F_x\^\* n(x).P(N=n)
+
+\$\$
+
+Para determinar o risco coletivo da carteira, além da distribuição da v.a de valor de sinistros ( dada por uma gamma), precisa-se determinar a distribuição da v.a número de sinistros.
+
+Uma boa distribuição para determinar a ocorrência de eventos durante determinado período de tempo é a poisson, essa que tem lambda como seus parâmetro, representando a média de ocorrências de evento durante um período de tempo.
+
+O principal problema para esse mês é o fato de só existir disponível amostras de um único mês da ocorrência de sinistros, o que dificulta uma aproximação a média desta.
+
+Para os ajuste desse primeiro mês será considerado que os demais meses seguirão com uma ocorrência similar a da nossa amostra, e a medida que novos sinistros forem sendo registrados , esse parâmetros pode ir sendo reajustado.
+
+```{r warning=FALSE}
+### Determinando a quantidade de sinistro ocorrido no intervalo de 1 ### mês (Mês 1 apenas) 
+
+df <- read.csv('SafraP1.csv',colClasses = c('sexProf'='character'))
+
+#Lambda para ocorrencia do sinistro na clausula A e B
+
+lambdaA <- round(nrow(df[df$IndenizaA != 0,]) /4, digits = 0)
+lambdaB <- round(nrow(df[df$IndenizaB != 0,]) /4,digits = 0)
+
+lambdaA;lambdaB
+
+#Determinando Novamente os parâmetros para a Gamma de cada cláusula
+
+gA <- fitdistr(df[df$IndenizaA != 0,3 ],'gamma')
+
+gB <- fitdistr(df[df$IndenizaB != 0,4 ],'gamma')
+
+
+# Criando  função que calcula o número o Sinistro Coletivo de N 
+# Contratos, dado que o valor de sinistro é dado por uma Gamma e 
+# o número de sinistros por uma poisson
+
+SinistroColetivo = function(x, alpha, beta, lambda, nmax){
+  n = 0:nmax
+  return(sum(pgamma(x,shape = n*alpha,rate = beta)*dpois(n, lambda)) )
+}
+```
+
+```{r warning=FALSE}
+#Aplicando a formula a cada Cláusula
+#Cláusula A
+ColetivoA <- uniroot(function(x) SinistroColetivo(x,
+                                     alpha = gA$estimate[1],
+                                     beta = gA$estimate[2],
+                                     lambda = lambdaA,
+                                     nmax = nrow(df))
+        - 0.99,c(1e-8,1e8)) $root
+
+#Clausula B
+ColetivoB <-uniroot(function(x) SinistroColetivo(x,
+                                     alpha = gB$estimate[1],
+                                     beta = gB$estimate[2],
+                                     lambda = lambdaB,
+                                     nmax = nrow(df))
+        - 0.99,c(1e-8,1e8)) $root
+
+ColetivoA;ColetivoB
+
+```
+
+Esses valores seriam os necessários a arrecadar para ter 99% de garantia que todo mês arrecadasse mais do que perdesse. Comparando com o valor da indenização do mes1 enxergamos esses valores como muito mais reais.
+
+## Coletivo Por Perfil de Cliente
+
+Nessa etapa será calculado o valor de perda coletiva para cada um dos perfis de cliente. Para isto será necessário calcular todos os parâmetros das distribuições Gamma e Poisson para cada perfil.
+
+```{r warning=FALSE}
+
+#Vetor que guarda o numero de contratos de cada perfil de cliente
+
+nSexProf <- c()
+
+for (i in unique(df$sexProf)) {
+  nSexProf[i] <- round((nrow(df[df$sexProf == i,])/4), digits = 0) 
+}
+
+
+```
+
+```{r warning=FALSE}
+
+#Vetores que guardam o lambda para cada Perfil de Cliente
+
+#Indenização A
+
+lambdaASexProf <- c()
+
+for (i in unique(df$sexProf)) {
+  lambdaASexProf[i] <- round(nrow(df[df$sexProf == i & df$IndenizaA != 0,])/4, digits = 0)
+  
+}
+
+lambdaASexProf
+
+#Indenização B
+
+lambdaBSexProf <- c()
+
+for (i in unique(df$sexProf)) {
+  lambdaBSexProf[i] <- round(nrow(df[df$sexProf == i & df$IndenizaB != 0,])/4, digits = 0)
+  
+}
+
+lambdaBSexProf
+```
+
+```{r warning=FALSE}
+#Estimando os parametros de gama para cada Perfil de Cliente
+
+
+#Paramentros da Indenizacao A
+AlphaAVec <- c()
+BetaAVec <- c()
+
+for (i in unique(df$sexProf)) {
+  AlphaAVec[i] <- fitdistr(df[df$IndenizaA != 0 & df$sexProf == i,3 ],'gamma')$estimate[1]
+  BetaAVec[i]<- fitdistr(df[df$IndenizaA != 0 & df$sexProf == i,3 ],'gamma')$estimate[2]
+  
+}
+
+AlphaAVec
+BetaAVec
+
+#Parametros da Indenizacao B
+AlphaBVec <- c()
+BetaBVec <- c()
+
+for (i in unique(df$sexProf)) {
+  AlphaBVec[i] <- fitdistr(df[df$IndenizaB != 0 & df$sexProf == i,4 ],'gamma')$estimate[1]
+  BetaBVec[i]<- fitdistr(df[df$IndenizaB != 0 & df$sexProf == i,4 ],'gamma')$estimate[2]
+  
+}
+
+AlphaBVec
+BetaBVec
+```
+
+```{r warning=FALSE}
+#Calculando o Sinistro Coletivo para cada perfil de cliente
+
+#Indenizacao A
+
+SinColASexProf <- c()
+
+for (i in unique(df$sexProf)) {
+  SinColASexProf[i] <- round(uniroot(function(x) SinistroColetivo(x,
+                                     alpha = AlphaAVec[i],
+                                     beta = BetaAVec[i],
+                                     lambda = lambdaASexProf[i],
+                                     nmax = nSexProf[i])
+        - 0.99,c(1e-8,1e8))$root, digits = 2)
+  
+}
+
+SinColASexProf
+
+
+#IndenizacaoB
+
+SinColBSexProf <- c()
+
+for (i in unique(df$sexProf)) {
+  SinColBSexProf[i] <- round(uniroot(function(x) SinistroColetivo(x,
+                                     alpha = AlphaBVec[i],
+                                     beta = BetaBVec[i],
+                                     lambda = lambdaBSexProf[i],
+                                     nmax = nSexProf[i])
+        - 0.99,c(1e-8,1e8))$root, digits = 2)
+}
+
+SinColBSexProf
+```
+
+```{r warning=FALSE}
+
+
+
+SinColSexProf <- SinColASexProf+SinColBSexProf
+
+SinColSexProf
+
+sum(SinColASexProf)
+sum(SinColBSexProf)
+
+```
+
+## Nova Tabela de Prêmios
+
+Diferente da tabela estimada na P1 que retornava o valor total do prêmio para cada contrato, essa nova versão retorna uma tabela que diz o valor que cada grupo de cliente deve arrecadar todo mês.
+
+Devido essa diferença, o valor de prêmio cobrado por perfil , mudará toda safra, pois depende diretamente do número de contratos para cada perfil.
+
+```{r warning=FALSE}
+PrecosPremios2.0 <-data.frame(SexProf = unique(df$sexProf),
+                              PremioA = SinColASexProf,
+                              PremioB = SinColBSexProf,
+                              PremioContrato = SinColSexProf)
+
+head(PrecosPremios2.0)
+```
+
+## Reajuste dos Prêmios Mês1
+
+### Calculando Valores de Prêmios para Safra 1
+
+```{r warning=FALSE}
+ContratosMes1.2 <- read.csv('Mes1_P1.csv', encoding = 'UTF-8', sep = ';')
+
+nContratosMes1 <- c()
+
+
+for (i in unique(df$sexProf)) {
+  nContratosMes1[i] <- round((nrow(ContratosMes1.2[ContratosMes1$SexProf == i,])), digits = 0) 
+}
+
+nContratosMes1
+
+PrecosPremiosM1 <-data.frame(SexProf = unique(df$sexProf),
+                              PremioA = round(SinColASexProf/nContratosMes1,digits = 2),
+                              PremioB = round(SinColBSexProf/nContratosMes1, digits = 2),
+                              PremioContrato = round(SinColSexProf/nContratosMes1, digits = 2) )
+
+PrecosPremiosM1
+```
+
+Aplicando os valores de prêmio para o mês 1
+
+```{r warning=FALSE}
+
+
+colnames(ContratosMes1.2)[1] <- 'Id'
+ContratosMes1.2$SexProf <- paste(ContratosMes1.2$SexBio, ContratosMes1.2$Profis,sep ='')
+
+ContratosMes1.2 <- ContratosMes1.2 %>%
+  dplyr::select(Id, SexProf)%>%
+  left_join(PrecosPremiosM1, by = 'SexProf')%>%
+  dplyr::select(Id,SexProf,PremioA,PremioB,PremioContrato) %>%
+  mutate(Safra = 'Mes1', ValorParcela = round((PremioContrato), digits = 2), TempContrato = 1) %>%
+  mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738) %>%
+  mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252))
+
+head(ContratosMes1.2)
+```
+
+Arrecadado:
+
+```{r fig.width =8,fig.height=5,warning=FALSE}
+Recebimentos <- ContratosMes1.2 %>%
+                  group_by(SexProf) %>%
+                  dplyr::summarise(Recebido = sum(ValorRecebido), Cont=n())
+
+
+plot1 <- ggplot(Recebimentos,aes(x = reorder(SexProf, -Recebido), y = Recebido )) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste('R$',Recebido)), vjust = -1, ) +
+            ylim(0,23000)+
+            ggtitle('Arrecadação Por Perfil M1') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))+
+            geom_label(
+              label = paste('Total Arrecadado:R$',sum(Recebimentos$Recebido),sep=''),
+              x = '11',
+              y = 20000,
+              label.size = 0,
+              size = 6
+            )
+            
+
+
+plot2 <-ggplot(Recebimentos,aes(x = reorder(SexProf, -Cont), y = Cont)) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste(Cont)), vjust = -1, ) +
+            ylim(0,1800)+
+            ggtitle('Quantidade de Contratos Por Perfil M1') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07)) +
+            geom_label(
+              label = paste('Total Contratos:',sum(Recebimentos$Cont)),
+              x = '13',
+              y = 1300,
+              label.size = 0,
+              size = 6
+            )
+
+grid.arrange(plot1,plot2)
+```
+
+### Sinistro no reajuste
+
+```{r warning=FALSE}
+ContratosMes1.2 <- ContratosMes1.2 %>%
+                   left_join(SinistrosMes1, by = 'Id') %>%
+                   mutate(TempContrato = TempContrato + 1) %>%
+                   mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738)%>%
+                   mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252))
+
+
+```
+
+### Análise dos Prêmios e Sinistros
+
+```{r warning=FALSE}
+TabGraf <- ContratosMes1.2 %>%
+            dplyr::select(ValorRecebido, IndenizaA, IndenizaB) %>%
+            summarise(ValorRecebido = sum(ValorRecebido), IndenizaA = sum(IndenizaA), IndenizaB = sum(IndenizaB))
+
+TabGraf <- TabGraf %>%
+            pivot_longer(cols = c(ValorRecebido, IndenizaA, IndenizaB),
+                         names_to = 'Sum')
+
+
+
+ggplot(TabGraf,aes(x = reorder(Sum, -value), y = value )) +
+  geom_bar(stat = 'identity', fill =c(rgb(0.3,0.5,0.4,0.6) ,
+                                      rgb(0.3,0.9,0.4,0.6) ,
+                                      rgb(0.3,0.1,0.4,0.6)), colour = 'Black') +
+  geom_text(aes(label = paste('R$',value)), vjust = -1, ) +
+  ylim(0,72000)+
+  ggtitle('Recebido X Sinistralidade') +
+  xlab('')+
+  theme_classic() +
+  theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))
+
+```
+
+\#\#\#Por Perfil
+
+```{r fig.width= 11,fig.height=6, warning=FALSE}
+TabGraf2 <- ContratosMes1.2 %>% 
+              dplyr::select(Id,SexProf,ValorRecebido,IndenizaA, IndenizaB) %>%
+              pivot_longer(cols = c(ValorRecebido,IndenizaA,IndenizaB),
+                           names_to = 'Categoria',
+                           values_to = 'Valor') %>%
+              group_by(SexProf, Categoria) %>%
+              dplyr::summarise(Valor = sum(Valor))
+
+
+
+ggplot(TabGraf2, aes(fill=reorder(Categoria, -Valor),y = Valor, x =SexProf))+
+  geom_bar(position = 'dodge', stat= 'identity' ) +
+  scale_fill_manual(values = c(rgb(0.3,0.5,0.4,0.6) ,
+                               rgb(0.3,0.1,0.4,0.6) ,
+                               rgb(0.3,0.9,0.4,0.6)) ) +
+  geom_text(label = paste('R$',TabGraf2$Valor), position = position_dodge(width = .9), vjust = -.7, size = 3) +
+  ylim(0,5000) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = 'bold', hjust = -.07),
+        legend.position = c(0.9, 0.6)) +
+  guides(fill=guide_legend(title="")) +
+  ggtitle('Indenização X Recebimento')
+
+```
+
+A estimativa para os prêmios parece estar melhor estimada, parece ainda existir uma proporção maior de arrecadação do que de sinistros, porém essa diferença ocorre devido ser feita uma comparação entre 2 meses de arrecadação de prêmios contra 1 mês de ocorrência de sinistro; até o fim das safras esses valores vão se equilibrar.
+
+## Subscrição dos contratos do mês 2
+
+Tendo em vista a boa precificação feita para cada perfil de cliente anteriormente, serão subscritos todos os contratos do mês 2.
+
+```{r warning=FALSE}
+#Importando contratos para o mês dois
+
+SubscricaoMes2 <- read.csv2('SubscricaoM2.csv')
+colnames(SubscricaoMes2)[1] <- 'Id'
+SubscricaoMes2$SexProf <- paste(SubscricaoMes2$SexBio, SubscricaoMes2$Profis,sep ='')
+
+#calculando a tabela de preços para o mes 2
+
+nContratosMes2 <- c()
+
+
+for (i in unique(df$sexProf)) {
+  nContratosMes2[i] <- round((nrow(SubscricaoMes2[SubscricaoMes2$SexProf == i,])), digits = 0) 
+}
+
+nContratosMes2
+
+PrecosPremiosM2 <-data.frame(SexProf = unique(df$sexProf),
+                              PremioA = round(SinColASexProf/nContratosMes2,digits = 2),
+                              PremioB = round(SinColBSexProf/nContratosMes2, digits = 2),
+                              PremioContrato = round(SinColSexProf/nContratosMes2, digits = 2) )
+
+PrecosPremiosM2
+
+#Subscrevendo os contratos
+
+SubscricaoMes2 <- SubscricaoMes2 %>%
+  dplyr::select(Id, SexProf)%>%
+  left_join(PrecosPremiosM2, by = 'SexProf')%>%
+  dplyr::select(Id,SexProf,PremioA,PremioB,PremioContrato) %>%
+  mutate(Safra = 'Mes2', ValorParcela = round((PremioContrato), digits = 2), TempContrato = 1) %>%
+  mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738) %>%
+  mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252), IndenizaA = 0, IndenizaB = 0)
+
+#Juntando as Safras 1 e 2 nas mesmas tabelas
+
+ContratosGeral <- rbind(ContratosMes1.2, SubscricaoMes2)
+```
+
+O gráfico abaixo apresenta um total de R\$7448,52 arrecadados em prêmio do mês dois (valor próximo ao 99° percentil calculado pelo sinistro coletivo), sendo o perfil de cliente mais frenquente o "02", e o menos "11".
+
+```{r fig.width =8,fig.height=5, warning=FALSE}
+Recebimentos <- SubscricaoMes2 %>%
+                  group_by(SexProf) %>%
+                  dplyr::summarise(Recebido = sum(ValorRecebido), Cont=n())
+
+
+plot1 <- ggplot(Recebimentos,aes(x = reorder(SexProf, -Recebido), y = Recebido )) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste('R$',Recebido)), vjust = -1, ) +
+            ylim(0,23000)+
+            ggtitle('Arrecadação Por Perfil M2') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))+
+            geom_label(
+              label = paste('Total Arrecadado:R$',sum(Recebimentos$Recebido),sep=''),
+              x = '11',
+              y = 20000,
+              label.size = 0,
+              size = 6
+            )
+            
+
+
+plot2 <-ggplot(Recebimentos,aes(x = reorder(SexProf, -Cont), y = Cont)) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste(Cont)), vjust = -1, ) +
+            ylim(0,1800)+
+            ggtitle('Quantidade de Contratos Por Perfil M2') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07)) +
+            geom_label(
+              label = paste('Total Contratos:',sum(Recebimentos$Cont)),
+              x = '13',
+              y = 1300,
+              label.size = 0,
+              size = 6
+            )
+
+grid.arrange(plot1,plot2)
+
+```
+
+## Relatório Mês 3
+
+Apartir do mês três os códigos das etapas anteriores serão repetidos para cada novo mês, afim de facilitar a análise tais serão omitidos.
+
+Sempre serão seguidos as mesmas etapas:
+
+1.  Contabilização dos Sinistros : serão descontados o valor dos sinistros ocorridos dos prêmios.
+
+2.  Comparação entre o valor arrecadado contra as indenizações
+
+3.  Subscrições dos Contratos do mês atual.
+
+O gráfico abaixo, demontra que no montante desses 3 meses foram recebidos R\$ 37.629,15 de prêmios contra R\$ 9.397,08 em indenizações da cláusula B e R\$ 7.309,3 na cláusula A.
+
+```{r echo=FALSE, warning=FALSE}
+SinistrosMes2 <- read.csv2('SinistroMes2.csv')
+colnames(SinistrosMes2)[1] <- 'Id'
+ContratosGeral <- ContratosGeral %>%
+                    mutate(IndenizaA = ifelse(IndenizaA == 0, SinistrosMes2$IndenizaA,IndenizaA),
+                           IndenizaB = ifelse(IndenizaB == 0, SinistrosMes2$IndenizaB,IndenizaB))
+                                                
+
+ContratosGeral <- ContratosGeral %>%
+                    mutate(TempContrato = TempContrato + 1) %>%
+                    mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738)%>%
+                    mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252))
+
+```
+
+```{r echo=FALSE, warning=FALSE}
+TabGraf <- ContratosGeral %>%
+            dplyr::select(ValorRecebido, IndenizaA, IndenizaB) %>%
+            summarise(ValorRecebido = sum(ValorRecebido), IndenizaA = sum(IndenizaA), IndenizaB = sum(IndenizaB))
+
+TabGraf <- TabGraf %>%
+            pivot_longer(cols = c(ValorRecebido, IndenizaA, IndenizaB),
+                         names_to = 'Sum')
+
+
+ggplot(TabGraf,aes(x = reorder(Sum, -value), y = value )) +
+  geom_bar(stat = 'identity', fill =c(rgb(0.3,0.5,0.4,0.6) ,
+                                      rgb(0.3,0.9,0.4,0.6) ,
+                                      rgb(0.3,0.1,0.4,0.6)), colour = 'Black') +
+  geom_text(aes(label = paste('R$',value)), vjust = -1, ) +
+  ylim(0,72000)+
+  ggtitle('Recebido X Sinistralidade') +
+  xlab('')+
+  theme_classic() +
+  theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))
+
+
+```
+
+Nesse próximo gráfico, é possível verificar que existe uma proporcionalidade entre recebimento e indenização para todos os grupos, o que indica que os valores foram bem estimado para cada tipo de cliente.
+
+```{r fig.width= 11,fig.height=6,,echo=FALSE, warning=FALSE}
+TabGraf2 <- ContratosGeral %>% 
+              dplyr::select(Id,SexProf,ValorRecebido,IndenizaA, IndenizaB) %>%
+              pivot_longer(cols = c(ValorRecebido,IndenizaA,IndenizaB),
+                           names_to = 'Categoria',
+                           values_to = 'Valor') %>%
+              group_by(SexProf, Categoria) %>%
+              dplyr::summarise(Valor = sum(Valor))
+
+
+
+ggplot(TabGraf2, aes(fill=reorder(Categoria, -Valor),y = Valor, x =SexProf))+
+  geom_bar(position = 'dodge', stat= 'identity' ) +
+  scale_fill_manual(values = c(rgb(0.3,0.5,0.4,0.6) ,
+                               rgb(0.3,0.1,0.4,0.6) ,
+                               rgb(0.3,0.9,0.4,0.6)) ) +
+  geom_text(label = paste('R$',TabGraf2$Valor), position = position_dodge(width = .9), vjust = -.7, size = 3) +
+  ylim(0,13000) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = 'bold', hjust = -.07),
+        legend.position = c(0.9, 0.6)) +
+  guides(fill=guide_legend(title="")) +
+  ggtitle('Indenização X Recebimento')
+```
+
+Com uma carteira superavitaria, pode-se então tomar como decisão a subscrição de todos os contratos oferecido para a Safra 3.
+
+```{r echo=FALSE, warning=FALSE}
+#Importando contratos para o mês três
+
+SubscricaoMes3 <- read.csv2('SubscricaoM3.csv')
+colnames(SubscricaoMes3)[1] <- 'Id'
+SubscricaoMes3$SexProf <- paste(SubscricaoMes3$SexBio, SubscricaoMes3$Profis,sep ='')
+
+#calculando a tabela de preços para o mes 2
+
+nContratosMes3 <- c()
+
+
+for (i in unique(df$sexProf)) {
+  nContratosMes3[i] <- round((nrow(SubscricaoMes3[SubscricaoMes3$SexProf == i,])), digits = 0) 
+}
+
+nContratosMes3
+
+PrecosPremiosM3 <-data.frame(SexProf = unique(df$sexProf),
+                              PremioA = round(SinColASexProf/nContratosMes3,digits = 2),
+                              PremioB = round(SinColBSexProf/nContratosMes3, digits = 2),
+                              PremioContrato = round(SinColSexProf/nContratosMes3, digits = 2) )
+
+PrecosPremiosM3
+
+#Subscrevendo os contratos
+
+SubscricaoMes3 <- SubscricaoMes3 %>%
+  dplyr::select(Id, SexProf)%>%
+  left_join(PrecosPremiosM3, by = 'SexProf')%>%
+  dplyr::select(Id,SexProf,PremioA,PremioB,PremioContrato) %>%
+  mutate(Safra = 'Mes3', ValorParcela = round((PremioContrato), digits = 2), TempContrato = 1) %>%
+  mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738) %>%
+  mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252), IndenizaA = 0, IndenizaB = 0)
+
+#Juntando as Safras 1 e 2 nas mesmas tabelas
+
+ContratosGeral <- rbind(ContratosGeral, SubscricaoMes3)
+
+```
+
+Abaixo, novamente identifica-se um valor arrecadado próximo dos R\$7000,00 devido ao valor estimado do sinistro coletivo, além disso, já é póssivel verificar que a distribuição de contratos por perfil de clientes vem se repetindo, sendo novamente o perfil '02' o mais frequente e o '11' menos frequente.
+
+```{r fig.width =8,fig.height=5,echo=FALSE, warning=FALSE}
+Recebimentos <- SubscricaoMes3 %>%
+                  group_by(SexProf) %>%
+                  dplyr::summarise(Recebido = sum(ValorRecebido), Cont=n())
+
+
+plot1 <- ggplot(Recebimentos,aes(x = reorder(SexProf, -Recebido), y = Recebido )) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste('R$',Recebido)), vjust = -1, ) +
+            ylim(0,23000)+
+            ggtitle('Arrecadação Por Perfil M3') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))+
+            geom_label(
+              label = paste('Total Arrecadado:R$',sum(Recebimentos$Recebido),sep=''),
+              x = '11',
+              y = 20000,
+              label.size = 0,
+              size = 6
+            )
+            
+
+
+plot2 <-ggplot(Recebimentos,aes(x = reorder(SexProf, -Cont), y = Cont)) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste(Cont)), vjust = -1, ) +
+            ylim(0,1800)+
+            ggtitle('Quantidade de Contratos Por Perfil M3') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07)) +
+            geom_label(
+              label = paste('Total Contratos:',sum(Recebimentos$Cont)),
+              x = '13',
+              y = 1300,
+              label.size = 0,
+              size = 6
+            )
+
+grid.arrange(plot1,plot2)
+```
+
+## Mês 4
+
+O gráfico abaixo de Recebimentos X Sinistralidade nos demonstram um crescimento maior nas arrecadações do que em indenizações, evento muito bem explicado por já existerem três diferentes safras arrecadando prêmios a mais tempo do que os contratos estão expostos a sinistros.
+
+```{r echo=FALSE, warning=FALSE}
+
+SinistrosMes3 <- read.csv2('SinistroMes3.csv')
+colnames(SinistrosMes3)[1] <- 'Id'
+ContratosGeral <- ContratosGeral %>%
+                    mutate(IndenizaA = ifelse(IndenizaA == 0, SinistrosMes3$IndenizaA,IndenizaA),
+                           IndenizaB = ifelse(IndenizaB == 0, SinistrosMes3$IndenizaB,IndenizaB))
+                                                
+
+ContratosGeral <- ContratosGeral %>%
+                    mutate(TempContrato = TempContrato + 1) %>%
+                    mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738)%>%
+                    mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252))
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+TabGraf <- ContratosGeral %>%
+            dplyr::select(ValorRecebido, IndenizaA, IndenizaB) %>%
+            summarise(ValorRecebido = sum(ValorRecebido), IndenizaA = sum(IndenizaA), IndenizaB = sum(IndenizaB))
+
+TabGraf <- TabGraf %>%
+            pivot_longer(cols = c(ValorRecebido, IndenizaA, IndenizaB),
+                         names_to = 'Sum')
+
+
+ggplot(TabGraf,aes(x = reorder(Sum, -value), y = value )) +
+  geom_bar(stat = 'identity', fill =c(rgb(0.3,0.5,0.4,0.6) ,
+                                      rgb(0.3,0.9,0.4,0.6) ,
+                                      rgb(0.3,0.1,0.4,0.6)), colour = 'Black') +
+  geom_text(aes(label = paste('R$',value)), vjust = -1, ) +
+  ylim(0,100000)+
+  ggtitle('Recebido X Sinistralidade') +
+  xlab('')+
+  theme_classic() +
+  theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))
+```
+
+O gráfico por perfis explicitam novamente esse caráter superavitário da carteira, além da proporção entre os custos causados por cada perfil e seu valor arrecadado.
+
+```{r fig.width= 11,fig.height=6,,echo=FALSE, warning=FALSE}
+
+TabGraf2 <- ContratosGeral %>% 
+              dplyr::select(Id,SexProf,ValorRecebido,IndenizaA, IndenizaB) %>%
+              pivot_longer(cols = c(ValorRecebido,IndenizaA,IndenizaB),
+                           names_to = 'Categoria',
+                           values_to = 'Valor') %>%
+              group_by(SexProf, Categoria) %>%
+              dplyr::summarise(Valor = sum(Valor))
+
+
+
+ggplot(TabGraf2, aes(fill=reorder(Categoria, -Valor),y = Valor, x =SexProf))+
+  geom_bar(position = 'dodge', stat= 'identity' ) +
+  scale_fill_manual(values = c(rgb(0.3,0.5,0.4,0.6) ,
+                               rgb(0.3,0.1,0.4,0.6) ,
+                               rgb(0.3,0.9,0.4,0.6)) ) +
+  geom_text(label = paste('R$',TabGraf2$Valor), position = position_dodge(width = .9), vjust = -.7, size = 3) +
+  ylim(0,25000) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = 'bold', hjust = -.07),
+        legend.position = c(0.9, 0.6)) +
+  guides(fill=guide_legend(title="")) +
+  ggtitle('Indenização X Recebimento')
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+SubscricaoMes4 <- read.csv2('SubscricaoM4.csv')
+colnames(SubscricaoMes4)[1] <- 'Id'
+SubscricaoMes4$SexProf <- paste(SubscricaoMes4$SexBio, SubscricaoMes4$Profis,sep ='')
+
+#calculando a tabela de preços para o mes 2
+
+nContratosMes4 <- c()
+
+
+for (i in unique(df$sexProf)) {
+  nContratosMes4[i] <- round((nrow(SubscricaoMes4[SubscricaoMes3$SexProf == i,])), digits = 0) 
+}
+
+nContratosMes4
+
+PrecosPremiosM4 <-data.frame(SexProf = unique(df$sexProf),
+                              PremioA = round(SinColASexProf/nContratosMes4,digits = 2),
+                              PremioB = round(SinColBSexProf/nContratosMes4, digits = 2),
+                              PremioContrato = round(SinColSexProf/nContratosMes4, digits = 2) )
+
+PrecosPremiosM4
+
+#Subscrevendo os contratos
+
+SubscricaoMes4 <- SubscricaoMes4 %>%
+  dplyr::select(Id, SexProf)%>%
+  left_join(PrecosPremiosM4, by = 'SexProf')%>%
+  dplyr::select(Id,SexProf,PremioA,PremioB,PremioContrato) %>%
+  mutate(Safra = 'Mes4', ValorParcela = round((PremioContrato), digits = 2), TempContrato = 1) %>%
+  mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738) %>%
+  mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252), IndenizaA = 0, IndenizaB = 0)
+
+#Juntando as Safras 1 e 2 nas mesmas tabelas
+
+ContratosGeral <- rbind(ContratosGeral, SubscricaoMes4)
+```
+
+Nesse mês, novamente foram subscritos todos os contratos, uma vez que os valores anteriormente estimados de prêmios parecem estar construindo uma carteira saudável.
+
+Mais uma vez os padrões mensais veem se repetindo, o que demonstra que a distribuição dos contratos por perfil de cliente é extremamente estável, fazendo com que a necessidade de sempre recalcular essa distribuição fasasse dispensável.
+
+```{r fig.width =8,fig.height=5, echo=FALSE, warning=FALSE}
+
+Recebimentos <- SubscricaoMes4 %>%
+                  group_by(SexProf) %>%
+                  dplyr::summarise(Recebido = sum(ValorRecebido), Cont=n())
+
+
+plot1 <- ggplot(Recebimentos,aes(x = reorder(SexProf, -Recebido), y = Recebido )) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste('R$',Recebido)), vjust = -1, ) +
+            ylim(0,23000)+
+            ggtitle('Arrecadação Por Perfil M4') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))+
+            geom_label(
+              label = paste('Total Arrecadado:R$',sum(Recebimentos$Recebido),sep=''),
+              x = '11',
+              y = 20000,
+              label.size = 0,
+              size = 6
+            )
+            
+
+
+plot2 <-ggplot(Recebimentos,aes(x = reorder(SexProf, -Cont), y = Cont)) +
+            geom_bar(stat = 'identity', fill =rgb(0.3,0.5,0.4,0.6), colour = 'Black') +
+            geom_text(aes(label = paste(Cont)), vjust = -1, ) +
+            ylim(0,1800)+
+            ggtitle('Quantidade de Contratos Por Perfil M4') +
+            xlab('SexProf')+
+            theme_classic() +
+            theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07)) +
+            geom_label(
+              label = paste('Total Contratos:',sum(Recebimentos$Cont)),
+              x = '11',
+              y = 1300,
+              label.size = 0,
+              size = 6
+            )
+
+grid.arrange(plot1,plot2)
+
+```
+
+## Relatório mês 5
+
+O gráfico abaixo, em contra partida ao mês anterior, demonstra um maior aumento nos valores das indenizações do que em arrecadação, uma vez que agora já existem 4 safras diferentes expostas ao risco, confirmando que assim com dito anteriormente, os valores de prêmios e sinistralidade vão se balanceando a medida do tempo.
+
+```{r echo=FALSE, warning=FALSE}
+
+SinistrosMes4 <- read.csv2('SinistroM4.csv')
+colnames(SinistrosMes4)[1] <- 'Id'
+ContratosGeral <- ContratosGeral %>%
+                    mutate(IndenizaA = ifelse(IndenizaA == 0, SinistrosMes4$IndenizaA,IndenizaA),
+                           IndenizaB = ifelse(IndenizaB == 0, SinistrosMes4$IndenizaB,IndenizaB))
+                                                
+
+ContratosGeral <- ContratosGeral %>%
+                    mutate(TempContrato = TempContrato + 1) %>%
+                    mutate(ValorRecebido = round((ValorParcela*TempContrato), digits = 2),Du = 21*TempContrato, SELIC =0.0738)%>%
+                    mutate(ValorRendido = ValorRecebido*(1+SELIC)^(Du/252))
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+TabGraf <- ContratosGeral %>%
+            dplyr::select(ValorRendido, IndenizaA, IndenizaB) %>%
+            summarise(ValorRendido = round(sum(ValorRendido),digits = 2), IndenizaA = sum(IndenizaA), IndenizaB = sum(IndenizaB))
+
+
+TabGraf$ValorRecebido - TabGraf$IndenizaA - TabGraf$IndenizaB
+
+
+TabGraf <- TabGraf %>%
+            pivot_longer(cols = c(ValorRecebido, IndenizaA, IndenizaB),
+                         names_to = 'Sum')
+
+
+ggplot(TabGraf,aes(x = reorder(Sum, -value), y = value )) +
+  geom_bar(stat = 'identity', fill =c(rgb(0.3,0.5,0.4,0.6) ,
+                                      rgb(0.3,0.9,0.4,0.6) ,
+                                      rgb(0.3,0.1,0.4,0.6)), colour = 'Black') +
+  geom_text(aes(label = paste('R$',value)), vjust = -1, ) +
+  ylim(0,150000)+
+  ggtitle('Recebido X Sinistralidade') +
+  xlab('')+
+  theme_classic() +
+  theme(plot.title = element_text(size = 20, face = 'bold', hjust = -.07))
+
+
+```
+
+Esse último gráfico reforça tendeência de equilibrio comentado anteriormente, uma vez que antes o Valor Recebido disparou na frente de Indenizações, a medida que o tempo está passando essa diferença está sendo amenizada.
+
+```{r fig.width= 11,fig.height=6,echo=FALSE, warning=FALSE}
+TabGraf2 <- ContratosGeral %>% 
+              dplyr::select(Id,SexProf,ValorRecebido,IndenizaA, IndenizaB) %>%
+              pivot_longer(cols = c(ValorRecebido,IndenizaA,IndenizaB),
+                           names_to = 'Categoria',
+                           values_to = 'Valor') %>%
+              group_by(SexProf, Categoria) %>%
+              dplyr::summarise(Valor = sum(Valor))
+
+
+
+ggplot(TabGraf2, aes(fill=reorder(Categoria, -Valor),y = Valor, x =SexProf))+
+  geom_bar(position = 'dodge', stat= 'identity' ) +
+  scale_fill_manual(values = c(rgb(0.3,0.5,0.4,0.6) ,
+                               rgb(0.3,0.1,0.4,0.6) ,
+                               rgb(0.3,0.9,0.4,0.6)) ) +
+  geom_text(label = paste('R$',TabGraf2$Valor), position = position_dodge(width = .9), vjust = -.7, size = 3) +
+  ylim(0,40000) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = 'bold', hjust = -.07),
+        legend.position = c(0.9, 0.6)) +
+  guides(fill=guide_legend(title="")) +
+  ggtitle('Indenização X Recebimento')
+```
+

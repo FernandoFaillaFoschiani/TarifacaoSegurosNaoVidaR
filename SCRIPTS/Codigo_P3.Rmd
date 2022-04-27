@@ -1,0 +1,190 @@
+---
+title: "P3 - Matemática Atuarial Não Vida"
+author: "Fernando Failla Foschiani"
+date: "09/02/2022"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+
+```{r}
+setwd("D:\\Documents\\Unifesp 2020\\2021\\6°Termo\\Mat-Atu-NaoVida\\P3")
+getwd()
+```
+
+
+## Simulação Com Carteira de Perfil Alto Risco
+Essa carteira é composta por uma composição majoritaria de clientes de perfil mais arriscado.
+Inicialmente será calculado o valor arrecadado nos 12 meses, com base na distribuição de sinistralidade inicial Gamma(9,3), para isso será utilizada o formula de Scol, de forma que o valor arrecadado cubra todos os custos com 99% de confiança.
+
+
+```{r}
+
+#Definindo Numero de Contratos
+N_Contrato = 30000
+
+#lendo a tabela que fornece frequencia de perfil
+Tabela_Frequencia = read.csv2('FrequenciaInicial.csv')
+
+#Criando uma coluna dando um Id para cada perfil, de 1 a 18
+Tabela_Frequencia$Perfil <- c(1:nrow(Tabela_Frequencia))
+
+#Ordenando a tabela com as maiores frequencias no topo
+Tabela_Frequencia <- Tabela_Frequencia[order(Tabela_Frequencia$Freq, decreasing = TRUE),]
+
+# Os perfis mais arriscados estão concentrados nas primeiras linhas então essas receberam mais conrtatos subscritos
+
+Tabela_Frequencia$Qtd_Contratos <- 30000 * c(0.15,0.10,0.10,0.05,0.05,0.05,0.05,0.05,0.04,
+                                             0.04,0.04,0.04,0.04,0.04,0.04,0.04,0.04,0.04)
+
+Tabela_Frequencia$Qtd_Sinistros <- round(Tabela_Frequencia$Qtd_Contratos * Tabela_Frequencia$Freq, digits = 0)
+Tabela_Frequencia$LambdaMensal <- round(Tabela_Frequencia$Qtd_Sinistros/12, digits = 2)
+
+# Definindo Função para o Sinistro coletivo
+
+SinistroColetivo = function(x, alpha, beta, lambda, nmax){
+  n = 0:nmax
+  return(sum(pgamma(x,shape = n*alpha,rate = beta)*dpois(n, lambda)) )
+}
+
+#Loop For Para Gerar O Prêmio Coletivo para cada perfil de contrato
+
+PremioPerfil <- c()
+
+for (i in c(1:nrow(Tabela_Frequencia))) {
+  
+PremioPerfil[i] <-  uniroot(function(x) SinistroColetivo(x,
+                                     alpha = 9,
+                                     beta = 3,
+                                     lambda = Tabela_Frequencia$LambdaMensal[i],
+                                     nmax = Tabela_Frequencia$Qtd_Contratos[i])
+        - 0.99,c(1e-8,1e8)) $root
+  
+}
+
+
+Tabela_Frequencia$PremioPerfil <- PremioPerfil
+
+ValorArrecadado <- sum(PremioPerfil)*12
+ValorArrecadado
+
+```
+
+## Mês 4
+
+A partir do mês 4 houveram mudanças na variável exógena Câmbio, com isso modificando a frequência de sinistros de cada perfil, assim afetando diretamente o lambda, além disso, a média da Distribuição de sinistralidades cresceu em 15%, transformando-se assim em uma Gamma(10.5,3).
+
+Para estimar como essas mudanças afetaram a carteira, será simulada a distribuição do sinistro coletivo considerando essas mudanças, a partir disso será possível estimar a nova média mensal de sinsitralidade, e assim aplicá-la no modelo de Ruína.
+
+```{r}
+
+FrequenciaM4 <- read.csv2('FrequenciaM4.csv')
+#Criando uma coluna dando um Id para cada perfil, de 1 a 18
+FrequenciaM4$Perfil <- c(1:nrow(FrequenciaM4))
+
+#Ordenando a tabela com as maiores frequencias no topo
+FrequenciaM4 <- FrequenciaM4[order(FrequenciaM4$Freq, decreasing = TRUE),]
+
+# Os perfis mais arriscados estão concentrados nas primeiras linhas então essas receberam mais conrtatos subscritos
+
+FrequenciaM4$Qtd_Contratos <- 30000 * c(0.15,0.10,0.10,0.05,0.05,0.05,0.05,0.05,0.04,
+                                             0.04,0.04,0.04,0.04,0.04,0.04,0.04,0.04,0.04)
+
+FrequenciaM4$Qtd_Sinistros <- round(FrequenciaM4$Qtd_Contratos * FrequenciaM4$Freq, digits = 0)
+FrequenciaM4$LambdaMensal <- round(FrequenciaM4$Qtd_Sinistros/12, digits = 2)
+
+#Visualizando as diferenças entre os lambdas do m1 e do m4
+DiferencaLambdaMensal <- FrequenciaM4$LambdaMensal - Tabela_Frequencia$LambdaMensal 
+
+DiferencaLambdaMensal
+
+#Vale ressaltar que a freq de determinados perfis diminuiram com o crescimento do cambio
+
+#Agora será calculado o valor médio para sinistralia a partir do M4, porém não sera feito por perfil, mas sim da carteira
+#Para isso iremos simular a distribuição completa do Sinistro Coletivo
+
+Distr <- c() # Variavel para guardar os valores da distribuição
+quantis <- seq(0.0001,0.9999, by = 0.001) # Variavel representando os percentis
+
+#Looping para simular a distribuição do sinistro coletivo, sendo a nova distribução da severidade uma GAMMA(10.35,3)
+
+for (i in 1:length(quantis) ) {
+Distr[i] <-  uniroot(function(x) SinistroColetivo(x,
+                                       alpha = 10.35,
+                                       beta = 3,
+                                       lambda = sum(FrequenciaM4$LambdaMensal),
+                                       nmax = 30000)
+          - quantis[i],c(1e-8,1e8)) $root
+  
+}
+
+library(fitdistrplus) #biblioteca para determinar parametros da distribuição
+
+ParametrosSinistroColetivo <- fitdist(Distr, 'norm')
+
+MediaSinistroM4 <- ParametrosSinistroColetivo$estimate[1]
+MediaSinistroM4
+
+DesvPadM4 <- ParametrosSinistroColetivo$estimate[2]
+DesvPadM4
+
+hist(Distr)
+qqnorm(y = Distr)
+qqline(Distr)
+
+```
+
+## Aplicando o Modelo de Ruina
+
+Tendo em vista que todo o valor de prêmios será arrecadado de uma vez no primeiro mês, usaremos esse valor como capital inicial, a média e o desvio padrão estimados para a distribuição de sinistros do quarto mês, e o período de 12 meses que a carteira deverá suportar.
+
+```{r}
+
+P <- 0
+m <-  MediaSinistroM4
+d <- DesvPadM4
+nI=0
+
+Tinsolv=c(1:10000)*0
+for(simulacao in 1:10000) {
+  Capital=c(1:12)*0
+  Capital[1]=ValorArrecadado
+  i=1
+  while (Capital[i]>0 && i<12) {
+    i=i+1
+    Capital[i]=Capital[i-1] + P - rnorm(1,m,d)
+  }
+  if (Capital[i]<0) { nI=nI+1
+  Tinsolv[nI]=i  }
+}
+x=Tinsolv[1:nI]
+
+Tinsolv
+library(tidyverse)
+library(ggplot2)
+
+Ruina <- data.frame(Data = c(1:12), Cap = Capital)
+
+Ruina %>% 
+  ggplot(aes(Data,Cap)) +
+  geom_line() +
+  geom_line(aes(x = Data, y = 0 ), lty = 2, color = 'red', size = 1.2) +
+  geom_segment(aes(x = 12, y = 0,xend = 12, yend = Capital[12]), lty = 2, color = "DarkGreen",size = 1.2)+
+  geom_point()+
+  annotate("text",label = "Lucro da Operação", x = 12, y = 1400, angle = 90, vjust = -1, color = 'DarkGreen', fontface = 'bold')+ 
+  annotate("text",label = "Insolvência", x = 2, y = 0.5 , vjust = -1, color = 'Red', fontface = 'bold')+ 
+  expand_limits(y = 0)+
+  labs(x = "Mês",
+       y = 'Capital Acumulado da Empresa',
+       title = 'Simulação Modelo de Ruína',
+       subtitle = paste("Capital Inicial:",round(ValorArrecadado,digits = 2),' Média:',round(MediaSinistroM4,digits = 2)," , DesvPad:",round(DesvPadM4,digits = 2))) +
+  scale_x_continuous(breaks = c(1:12))
+
+
+```
+
+Através do código acima foram realizadas 10.000 simulações do modelo de Ruína, e em nenhuma delas a carteira se tornou insolvente até o mês 12
+
+

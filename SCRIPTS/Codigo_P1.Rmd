@@ -1,0 +1,190 @@
+---
+title: 'Matematica Atuarial Não Vida : Avaliação 1'
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+#### Fenrnado Failla Foschiani, CAI 6°Termo
+
+#### 142594
+
+## Objetivo
+
+Precificar o prêmio dos futuros contratos de uma Seguradora, baseado em uma série histórica previamente disponibilizada.
+
+A base dispõe uma carteira de contratos com duas cláusulas **A** e **B**,além de informações sobre o segurado como **sexo** e **profissao**.
+
+Segue **abaixo** a tabela:
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(knitr)
+library(fitdistrplus)
+library(scales)
+```
+
+```{r Carregamento da Base}
+df <- read.csv('P1_17.csv')
+kable(head(df))
+```
+
+## Distribuição de Probabilidade
+
+Para mensurar o Prêmio Médio Estatístico, é de grande importância encontrar a fdp que descreve cada uma das cláusulas, e para isso, foi adotado nesse trabalho a Distribuição Gamma para representar os dados.
+
+Logo, para encontrar a fdp, basta estimar os parâmetros para a função Gamma de cada clausula, para isso foi utilizado o pacote`fitdistrplus`.
+
+```{r pressure, warning=FALSE}
+gA <- fitdistr(df[df$IndenizaA != 0,3 ],'gamma')
+gA
+
+gB <- fitdistr(df[df$IndenizaB != 0,4 ],'gamma')
+gB
+
+```
+
+Após isso basta subistuir os parâmetros na função Gamma.
+
+Para visualizar a FDP e o seu ajuste a distrbuição dos dados, foram plotados os Histogramas para cada uma das clausula, sobrepostas por suas funções estimadas.
+
+```{r}
+xA <- df[df$IndenizaA != 0,3 ]
+yA <- dgamma(df[df$IndenizaA != 0,3 ], gA$estimate[1],gA$estimate[2])
+hist(xA,prob = TRUE, main = 'Clausula A:Histograma e Densidade')  
+lines(xA[order(xA)],yA[order(xA)],col='blue')
+```
+
+```{r warning=FALSE}
+xB <- df[df$IndenizaB != 0,4 ]
+yB <- dgamma(df[df$IndenizaB != 0,4 ], gB$estimate[1],gB$estimate[2])
+hist(xB,prob = TRUE,main = 'Clausula B: Histrograma e Densidade')
+lines(xB[order(xB)],yB[order(xB)],col='Red')
+```
+
+Para efeito comparativo, foram plotadas as duas FDP's juntas.
+
+```{r}
+plot(xB[order(xB)],yB[order(xB)],col = 'Red', type = 'l', xlab='Valor da Indenização', ylab = 'P(X)')
+lines(xA[order(xA)],yA[order(xA)],col='blue')
+legend('right',legend = c('ClausulaA','ClausulaB'), col = c('blue','Red'),
+       lty = 1, box.lty = 0)
+```
+
+## Cálculo do Sinistro Médio
+
+Com as FDP's estimadas, é possível obter a probabilidade de ocorrência de cada valor de sinistro, assim possibilitando o cálculo do Sinistro Médio de cada clausula. Sendo X a variavel Aleatória Valor de 1 Sinistro, temos que o Sinistro Médio: $$ E[x]=∫_0^∞xf_x (x)dx  $$ Logo, pode-se definir a seguinte função em R:
+
+```{r}
+calc_Sinistro <- function(x,a,b){
+  y = sum(x*dgamma(x,a,b))
+  return(y)
+}
+
+```
+
+#### Aplicando a função as Clausulas
+
+Clausula A
+
+```{r}
+sA <- calc_Sinistro(df[df$IndenizaA != 0,3 ], gA$estimate[1],gA$estimate[2])
+sA
+
+```
+
+Clausula B
+
+```{r}
+sB <- calc_Sinistro(df[df$IndenizaB != 0,4 ], gB$estimate[1],gB$estimate[2])
+sB
+```
+
+## Severidade em Relação as Variáveis Qualitativas
+
+Com a média do preço dos sinistros já estabelecida, é importante calcular a probabilidade de ocorrência deste.Porém, deve-se realizar essa cálculo para cada perfil de cliente, para assim cobrar preços mais personalizados e adequados para cada um.
+
+Para isso, foram criadas categorias que contemplam as variáveis **sexo** e **profissão**:
+
+```{r}
+df$sexProf <- paste(df$SexBio, df$Profis, sep = '')
+combSexProf <- unique(df$sexProf)
+
+combSexProf
+```
+
+Com essa categorias em mão, podemos indentificar a sinistralidade de cada uma delas através do Teorema de Bayes: $$  P(A∩B)/P(B)  $$ Gerando a Probabilidade para cada categoria na clausúla A:
+
+```{r}
+#Probabilidade de A
+ProbA <- nrow(df[df$IndenizaA != 0 , ])/nrow(df)
+ProbA
+
+#Looping para calcular a probabilidade de cada categoria na clausula A
+
+SinistralidadeASexProf <- c()
+TotalASexProf <- c()
+
+for (i in 1:length(combSexProf)) {  
+  SinistralidadeASexProf[i] <- nrow(df[df$IndenizaA != 0 & df$sexProf == combSexProf[i],])
+  TotalASexProf<- nrow(df[df$sexProf == combSexProf[i],])
+
+}
+
+
+ProbASexProf <- SinistralidadeASexProf/TotalASexProf
+ProbASexProf
+
+```
+
+Gerando a Probabilidade para cada categoria na clausúla B:
+
+```{r}
+#Probabilidade de B
+ProbB <- nrow(df[df$IndenizaB != 0, ])/nrow(df)
+ProbB
+
+#Gerando a Probabilidade de Cada Categoria de B
+
+SinistralidadeBSexProf <- c()
+TotalBSexProf <- c()
+for (i in 1:length(combSexProf)) {  
+  SinistralidadeBSexProf[i] <- nrow(df[df$IndenizaB != 0 & df$sexProf == combSexProf[i],])
+  TotalBSexProf<- nrow(df[df$sexProf == combSexProf[i],])
+}
+
+
+ProbBSexProf <- SinistralidadeBSexProf/TotalBSexProf
+ProbBSexProf
+```
+
+Para efeito de comparação, foi gerada uma tabela com as categorias e probabilidade de sinistro em cada clausula.
+
+```{r}
+ProbDf <- data.frame(SexProf = combSexProf, PA = ProbASexProf, PB = ProbBSexProf)
+ProbDf[2:3] <- sapply(ProbDf[2:3],function(x) percent(x))
+kable(ProbDf)
+```
+
+Através dessa tabela verificamos que há relação entre as variaveis qualitativas e a ocorrência de sinistros.
+
+## Cálculo do Prêmio estatístico
+
+Uma vez tendo o valor médio da sinistralidade, e a probabilidade de ocorrência para cada uma das categorias, pode-se calcular o Prêmio Estatíscio para cada uma delas através de:
+
+$$ P=E[S]=∫_0^∞xf_x (x)dx⋅P(N)                  N=(A,B,...,Z) $$ Sendo X a variável valor da indenização, e N o conjunto de clausulas de um contrato.
+
+Através dessa fórmula chegamos na seguinte tabela de preços para Prêmio:
+
+```{r}
+PrecosA <- round(sA * ProbASexProf, 2)
+PrecosB <- round(sB * ProbBSexProf,2)
+PrecosPremios <- data.frame(SexProf = combSexProf, PremioA = PrecosA, PremioB = PrecosB)
+PrecosPremios$PremioContrato <- PrecosPremios$PremioA +PrecosPremios$PremioB
+kable(PrecosPremios)
+
+write.csv(PrecosPremios, file = 'TabelaPremios.csv')
+write.csv(df, file = 'SafraP1.csv', row.names = FALSE)
+```
+
+Dessa forma, foram calculados os prêmios estatísticos para cada perfil de cliente de um mesmo contrato.
